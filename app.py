@@ -21,53 +21,52 @@ st.markdown('<div class="main-title">🎓 Smart Study Assistant</div>', unsafe_a
 st.markdown('<div class="subtitle">Upload a file and ask questions — compare responses from multiple models</div>', unsafe_allow_html=True)
 st.divider()
 
-# Sidebar
 st.sidebar.title("⚙️ Settings")
 PRIVATEGPT_URL = st.sidebar.text_input("🌐 PrivateGPT URL", value="http://localhost:8001")
+AVAILABLE_MODELS = ["llama3", "qwen3:8b", "mistral", "deepseek-r1:8b"]
+selected_model = st.sidebar.selectbox("🤖 Model for single questions", AVAILABLE_MODELS)
 
-AVAILABLE_MODELS = ["llama3", "qwen3:8b", "mistral", "deepseek-r1:14b"]
-
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Comparison Models:**")
 compare_models = st.sidebar.multiselect(
-    "Comparison Models:",
+    "Select models to compare",
     AVAILABLE_MODELS,
-    default=["llama3", "qwen3:8b"]
+    default=["llama3", "qwen3:8b", "mistral", "deepseek-r1:8b"]
 )
 
-selected_model = st.sidebar.selectbox("Model for single questions", AVAILABLE_MODELS)
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Connection Status:**")
+try:
+    health = requests.get(f"{PRIVATEGPT_URL}/health", timeout=3)
+    if health.status_code == 200:
+        st.sidebar.success("✅ PrivateGPT is running")
+    else:
+        st.sidebar.warning("⚠️ PrivateGPT responded with an error")
+except:
+    st.sidebar.error("❌ PrivateGPT is not running")
 
-# File upload
-st.subheader("📁 Upload File")
+st.subheader("📂 Upload File")
 uploaded_file = st.file_uploader("Upload a PDF or TXT file", type=["pdf", "txt"])
 
-if uploaded_file:
-    with st.spinner("Uploading file to PrivateGPT..."):
-        try:
-            files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-            resp = requests.post(f"{PRIVATEGPT_URL}/v1/ingest/file", files=files, timeout=120)
-            if resp.status_code == 200:
-                st.success("✅ File uploaded successfully!")
-            else:
-                st.error(f"❌ Upload failed: {resp.status_code}")
-        except Exception as e:
-            st.error(f"❌ Could not connect to PrivateGPT: {e}")
+if uploaded_file is not None:
+    if st.button("📤 Send file to PrivateGPT"):
+        with st.spinner("Uploading file..."):
+            try:
+                resp = requests.post(
+                    f"{PRIVATEGPT_URL}/v1/ingest/file",
+                    files={"file": (uploaded_file.name, uploaded_file, uploaded_file.type)},
+                    timeout=300
+                )
+                if resp.status_code == 200:
+                    st.success(f"✅ '{uploaded_file.name}' uploaded successfully!")
+                else:
+                    st.error(f"❌ Error: {resp.status_code} — {resp.text[:200]}")
+            except Exception as e:
+                st.error(f"❌ Connection failed: {e}")
 
 st.divider()
 
-# Tabs
 tab1, tab2 = st.tabs(["🔍 Compare Models", "💬 Single Question"])
-
-COLORS = {
-    "llama3": "#4f46e5",
-    "qwen3:8b": "#10b981",
-    "mistral": "#f59e0b",
-    "deepseek-r1:14b": "#ef4444"
-}
-
-def get_color(model):
-    for k, v in COLORS.items():
-        if k in model:
-            return v
-    return "#6b7280"
 
 def get_prompt(model, question):
     if "llama3" in model:
@@ -80,9 +79,22 @@ def get_prompt(model, question):
         return f"Analyze the question and provide a logical, well-organized answer.\nThink step by step.\n\nQuestion:\n{question}"
     return question
 
+COLORS = {
+    "llama3": "#4f46e5",
+    "qwen3:8b": "#10b981",
+    "mistral": "#f59e0b",
+    "deepseek-r1:8b": "#ef4444"
+}
+
+def get_color(model):
+    for k, v in COLORS.items():
+        if k in model:
+            return v
+    return "#6b7280"
+
 with tab1:
     st.subheader("🔍 Compare Models")
-    question_compare = st.text_area("✏️ Write your question here:", height=100, key="compare_q")
+    question_compare = st.text_area("✍️ Write your question here:", height=100, key="compare_q")
     use_context = st.checkbox("📚 Use context from uploaded file", value=True)
 
     if st.button("🚀 Start Comparison", disabled=not question_compare or len(compare_models) < 2):
@@ -131,53 +143,116 @@ with tab1:
                     with cols[i]:
                         placeholders[i].empty()
                         st.markdown(f"**🤖 {model}** ✅")
-                        st.markdown(f'<div class="answer-box">{answer}</div>', unsafe_allow_html=True)
-                        st.caption(f"⏱️ {elapsed} sec | 📝 {word_counts[model]} words")
+                        st.markdown(f"""<div class="answer-box">{answer}</div>""", unsafe_allow_html=True)
+                        st.caption(f"⏱️ {elapsed} sec | 📝 {word_counts[model]} words | ⭐ {scores[model]}")
                 else:
-                    with cols[i]:
-                        placeholders[i].error(f"❌ Error: {resp.status_code}")
+                    placeholders[i].error(f"❌ Error {resp.status_code}")
             except Exception as e:
-                with cols[i]:
-                    placeholders[i].error(f"❌ {str(e)}")
+                placeholders[i].error(f"❌ Failed: {e}")
 
+        # ============================================================
+        # Charts & Analytics
+        # ============================================================
         if scores:
             winner = max(scores, key=scores.get)
+            st.divider()
+
             st.markdown(f"""
-            <div style="text-align:center; margin: 20px 0; padding: 16px; background: #f0fdf4; border-radius: 14px; border: 2px solid #22c55e;">
-                🏆 <strong>Winner:</strong> <span class="winner-badge">{winner}</span> with score <strong>{scores[winner]}</strong>
+            <div style="text-align:center; padding: 15px; background:#fffbeb; border-radius:12px; border:2px solid #fbbf24; margin-bottom:20px;">
+                🏆 <strong>Winner:</strong> <span class="winner-badge">{winner}</span> &nbsp; with score <strong>{scores[winner]}</strong>
             </div>
             """, unsafe_allow_html=True)
 
             st.markdown("### 📊 Performance Analytics")
+
             chart_col1, chart_col2 = st.columns(2)
+
             model_names = list(scores.keys())
             colors = [get_color(m) for m in model_names]
 
+            # Score Chart
             with chart_col1:
                 fig_score = go.Figure(go.Bar(
                     x=model_names,
                     y=[scores[m] for m in model_names],
                     marker_color=colors,
+                    marker_line_color="white",
+                    marker_line_width=1.5,
                     text=[f"{scores[m]}" for m in model_names],
                     textposition="outside",
+                    textfont=dict(size=13, color="#1a1a2e")
                 ))
-                fig_score.update_layout(title="🏆 Score", height=350, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+                fig_score.update_layout(
+                    title=dict(text="⭐ Quality Score", font=dict(size=16, color="#1a1a2e")),
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    yaxis=dict(showgrid=True, gridcolor="#e5e7eb", title="Score"),
+                    xaxis=dict(title="Model"),
+                    margin=dict(t=50, b=40, l=40, r=40),
+                    height=350
+                )
                 st.plotly_chart(fig_score, use_container_width=True)
 
+            # Response Time Chart
             with chart_col2:
                 fig_time = go.Figure(go.Bar(
                     x=model_names,
                     y=[times.get(m, 0) for m in model_names],
                     marker_color=colors,
-                    text=[f"{times.get(m, '-')}s" for m in model_names],
+                    marker_line_color="white",
+                    marker_line_width=1.5,
+                    text=[f"{times.get(m,0)}s" for m in model_names],
                     textposition="outside",
+                    textfont=dict(size=13, color="#1a1a2e")
                 ))
-                fig_time.update_layout(title="⏱️ Response Time (seconds)", height=350, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+                fig_time.update_layout(
+                    title=dict(text="⏱️ Response Time (seconds)", font=dict(size=16, color="#1a1a2e")),
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    yaxis=dict(showgrid=True, gridcolor="#e5e7eb", title="Seconds"),
+                    xaxis=dict(title="Model"),
+                    margin=dict(t=50, b=40, l=40, r=40),
+                    height=350
+                )
                 st.plotly_chart(fig_time, use_container_width=True)
+
+            # Word Count Chart
+            if word_counts:
+                fig_words = go.Figure(go.Bar(
+                    x=model_names,
+                    y=[word_counts.get(m, 0) for m in model_names],
+                    marker_color=colors,
+                    marker_line_color="white",
+                    marker_line_width=1.5,
+                    text=[f"{word_counts.get(m,0)} words" for m in model_names],
+                    textposition="outside",
+                    textfont=dict(size=13, color="#1a1a2e")
+                ))
+                fig_words.update_layout(
+                    title=dict(text="📝 Response Length (words)", font=dict(size=16, color="#1a1a2e")),
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    yaxis=dict(showgrid=True, gridcolor="#e5e7eb", title="Words"),
+                    xaxis=dict(title="Model"),
+                    margin=dict(t=50, b=40, l=40, r=40),
+                    height=350
+                )
+                st.plotly_chart(fig_words, use_container_width=True)
+
+            # Summary Table
+            st.markdown("### 📋 Summary Table")
+            summary_data = {
+                "Model": model_names,
+                "Score ⭐": [scores.get(m, "-") for m in model_names],
+                "Time (sec) ⏱️": [times.get(m, "-") for m in model_names],
+                "Words 📝": [word_counts.get(m, "-") for m in model_names],
+                "Winner 🏆": ["✅" if m == winner else "" for m in model_names]
+            }
+            st.dataframe(summary_data, use_container_width=True, hide_index=True)
 
 with tab2:
     st.subheader("💬 Ask a Single Model")
-    question_single = st.text_area("✏️ Write your question:", height=100, key="single_q")
+    question_single = st.text_area("✍️ Write your question:", height=100, key="single_q")
     use_ctx_single = st.checkbox("📚 Use context from uploaded file", value=True, key="ctx_single")
 
     if st.button("🤖 Ask", disabled=not question_single):
@@ -196,9 +271,9 @@ with tab2:
                 elapsed = time.time() - start
                 if resp.status_code == 200:
                     answer = resp.json()["choices"][0]["message"]["content"]
-                    st.markdown(f'<div class="answer-box">{answer}</div>', unsafe_allow_html=True)
-                    st.caption(f"⏱️ {round(elapsed, 2)} sec | 📝 {len(answer.split())} words")
+                    st.markdown(f"""<div class="answer-box">{answer}</div>""", unsafe_allow_html=True)
+                    st.caption(f"⏱️ {round(elapsed, 2)} sec | 📝 {len(answer.split())} words | 🤖 {selected_model}")
                 else:
-                    st.error(f"❌ Error: {resp.status_code}")
+                    st.error(f"Error: {resp.status_code} — {resp.text[:300]}")
             except Exception as e:
-                st.error(f"❌ Could not connect to PrivateGPT: {e}")
+                st.error(f"Connection failed: {e}")
