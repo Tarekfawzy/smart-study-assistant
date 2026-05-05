@@ -75,5 +75,6 @@ smart-study-assistant/
 
 ## 👨‍💻 Built by
 
-**Tarek Fawzy** — NLP Student  
-Built as a practical tool to make studying smarter, not harder. 🧠
+Built by: Smart Study Assistant Team
+Faculty of Computers and Artificial Intelligence
+Sphinx University, 2026
